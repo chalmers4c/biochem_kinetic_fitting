@@ -1,0 +1,277 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Feb 20 18:24:56 2024
+
+To fit for data without toehold exchange.
+It will solve an ODEs system to proximate the best k_eff and alpha
+The code will accept an excel from your local computer and will work based on panda's dataframe.
+The excel should have the following format, for each sheet:
+    Column A : Time in seconds
+    Column B : Fluorescence signal
+    Column C : Description of the data
+    Column D : Normalised Fluorescence signal
+    Column D can be computed through code instead
+    Different samples should be in different sheet, this is so that the dictionary can be compiled.
+The code will output a graph and an excel of the ODE fit.
+The code will print out the k_eff, alpha, cov_matrix and equation for the fit.
+
+@author: Chalmers Chau @ University of Leeds
+"""
+
+#%% Import packages
+"""Must import"""
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import scipy.optimize as opt
+import scipy.integrate as scint
+from matplotlib.ticker import AutoMinorLocator
+import tkinter as tk
+from tkinter import filedialog
+import matplotlib as mpl
+import os
+
+"""Optional"""
+from palettable.cartocolors.qualitative import Vivid_10 # custom colour package
+#%%
+plt.close('all') # close all figures between loading each data file.
+#%%
+"""Global variable throughout the script""" # These variables are meant for quick changes between each F5
+# Below to control the dataframe import
+Column_names = ['Time (s)', 'Description', 'Normalise to Maximum'] #These determines the name for later on, so if this is changed, the code snippet below has to be changed too.
+Column_to_use = [0, 2, 3]
+
+# Below to control the time series data range
+Time_from = 0 # from 0 seconds
+Time_to = 10800 # to 10800 seconds or 3 mins
+
+# Below to control the Gate concentration
+positive_control_concentration_nM = 50 # initial gate concentration
+
+# Below to control the samples by changing the sheet number
+dictionary_keys_position = 0 # change the excel sheet, 0 is the first sheet
+total_sheet_number = 2 # change the excel sheet total number
+
+# Below to control the colour of the graph
+cmap_colour = 0 # colour map list position
+"""End"""
+#%% Read data as dataframe and compiled the dictionary
+def file_path(): 
+    root = tk.Tk()
+    root.withdraw()
+    root.call('wm', 'attributes', '.', '-topmost', True)
+    file_full_path = filedialog.askopenfilename()
+    root.destroy()
+    folder_path = os.path.dirname(file_full_path)
+    return file_full_path, folder_path
+file_path, folder_path = file_path()
+File_name = str(os.path.basename(file_path).split('.')[0])
+def df_construction(sheet_number, Column_to_use, Column_names):
+    df = pd.read_excel(file_path, 
+                       sheet_name = sheet_number, 
+                       usecols = Column_to_use, 
+                       names = Column_names)
+    return df
+def dfs_construction(Column_to_use = [0, 2, 3],
+                     Column_names = ['Time (s)', 'Description', 'Normalise to Maximum'],
+                     Time_from = 0, 
+                     Time_to = 10800):
+    dfs = {}
+    for i in range(total_sheet_number):
+        df_name = f"df_{i+1}"
+        df = df_construction(sheet_number=i, 
+                                       Column_to_use = Column_to_use,
+                                       Column_names = Column_names
+                                       )
+        # Iterate over unique values in the 'Description' column
+        unique_descriptions = df['Description'].unique()
+        for description in unique_descriptions:
+            # Create DataFrame title using the description
+            title = description.strip()  # Remove any leading/trailing whitespaces
+            # Create dictionary entry using the description as key
+            key = f"{df_name}_{title}"
+            filtered_df = df[(df['Description'] == description) & (df['Time (s)'] >= Time_from) & (df['Time (s)'] <= Time_to)].reset_index(drop=True)
+            dfs[key] = filtered_df
+    return dfs
+dfs = dfs_construction(Time_from = Time_from, Time_to = Time_to, Column_to_use = Column_to_use, Column_names = Column_names)
+#%% Graphic and ODE fit curve output function
+def figure_export_png(Path = folder_path, Name = File_name + 'figure' + '_png'):
+    return plt.savefig(os.path.join(Path, Name)+'.png', format = 'png', dpi = 300)
+def figure_export_svg(Path = folder_path, Name = File_name + 'figure' + '_svg'):
+    return plt.savefig(os.path.join(Path, Name)+'.svg', format = 'svg')
+def excel_export(dataframe, Name = File_name + '_export', Path = folder_path):
+    excel_path = os.path.join(folder_path, Name)+'.xlsx'
+    with pd.ExcelWriter(excel_path) as excel_writer:
+        dataframe.to_excel(excel_writer, index = False, sheet_name = 'Default')
+    return
+#%% Define Ordinary Differential Equations:
+# define the ODEs system, the variable between the system and solve has to be consistent.
+def TMSD_ODEs_system(Initial_concentration, time_t, k_eff):
+    # Extract initial concentrations of reactants and products
+    Invader, Gate, Incumbent, Signal = Initial_concentration
+    
+    # Define ODEs
+    dInvader_dt = -k_eff * Invader * Gate
+    dGate_dt = dInvader_dt
+    dIncumbent_dt = k_eff * Invader * Gate
+    dSignal_dt = dIncumbent_dt
+    
+    return [dInvader_dt, 
+            dGate_dt, 
+            dIncumbent_dt,
+            dSignal_dt]
+
+# solve the ODEs
+def solve_TMSD_ODEs_system(time_t, #array of time in seconds
+                           k_eff, #starting k_eff value
+                           alpha, #scaling factor, this is the value that gets integrated
+                           positive_control_concentration_nM = positive_control_concentration_nM, 
+                           ):
+    # Define initial concentrations
+    Invader_init_conc = alpha * positive_control_concentration_nM * 10**-9 # Nanomolar and molar converter
+    Gate_init_conc = alpha * positive_control_concentration_nM * 10**-9
+    Incumbent_init_conc = 0
+    Signal_init_conc = 0 
+    
+    Initial_concentration = [Invader_init_conc, 
+                             Gate_init_conc, 
+                             Incumbent_init_conc, 
+                             Signal_init_conc
+                             ]
+    
+    # Perform numerical integration
+    Integration_solution = scint.odeint(func = TMSD_ODEs_system, 
+                                        y0 = Initial_concentration, 
+                                        t = time_t, 
+                                        args = (10**k_eff,), 
+                                        hmax = 20 #integration step size
+                                        )
+    
+    # Normalize the Signal integration solution
+    normalise_Signal_Integration_solution = Integration_solution[:, 3] / (positive_control_concentration_nM * 10**-9) #normalise the signal column as data
+    # Convert to dataframe as output
+    df_column_names = ['Invader', 'Gate', 'Incumbent', 'Signal']
+    global df_Integration_solution
+    df_Integration_solution = pd.DataFrame(Integration_solution, columns = df_column_names)
+    return normalise_Signal_Integration_solution
+
+# Below to run the function and plot, this is meant to help you understand how this works
+time_t = np.linspace(0, 10800, 100) # Create equal spaced array of time from 0 to 10800
+solution = solve_TMSD_ODEs_system(positive_control_concentration_nM = positive_control_concentration_nM, #five fluorescent linkers
+                                  time_t = np.linspace(0, 10800, 100), 
+                                  k_eff = 6.22, # mock value
+                                  alpha = 0.1) # mock value
+
+plt.figure(figsize=(7, 7))
+plt.plot(time_t, solution)
+plt.plot(time_t, solution[:, 1])
+plt.title('Normalised Signal Integration solution')
+plt.xlabel('Time')
+plt.ylabel('Normalized Fluorescence')
+plt.show()
+#%% fit curve.
+def fit_TMSD(normalised_time_t, 
+             normalised_fluorescent_F, 
+             positive_control_concentration_nM = positive_control_concentration_nM): 
+    def model_func(time_t, k_eff, alpha):
+        return solve_TMSD_ODEs_system(positive_control_concentration_nM = positive_control_concentration_nM,
+                                      time_t = time_t,
+                                      k_eff = k_eff,
+                                      alpha = alpha
+                                      )    
+    #popt contains the k_eff and alpha, the parameter that we have to provide in the solve_TMSD_ODEs_system
+    #pcov contains the variance
+    popt, pcov = opt.curve_fit(f = model_func, #function to fit, solved ODEs here
+                               xdata = normalised_time_t,
+                               ydata = normalised_fluorescent_F,
+                               p0 = [5, 1], #initial guess on the solve_TMSD_ODEs_system, first is the first variable k_eff, and then second is the alpha
+                               bounds = ([1.0, 0.005], [10.0, 1.0])) # Bounds for k_eff (1-10) and alpha (0.005-1)
+
+    return popt, pcov
+#%% fitting to the data of your choice
+# The code below will use the ODEs you set and the solve to fit your data.
+
+keys_to_select = [key for key in dfs.keys() if key.startswith('df_')]
+df_fitting = dfs[keys_to_select[dictionary_keys_position]]
+
+fit_params, cov_matrix = fit_TMSD(normalised_time_t = df_fitting['Time (s)'],
+                                  normalised_fluorescent_F = df_fitting['Normalise to Maximum'],
+                                  positive_control_concentration_nM = positive_control_concentration_nM)
+print('k_eff: ', fit_params[0])
+print('alpha: ', fit_params[1])
+print('cov_matrix: ', cov_matrix)
+print("Equation describing the fit_TMSD curve:")
+print(f"Fluorescence = {fit_params[1]} * exp(-{fit_params[0]} * Time)")
+#%% # plot
+# code below will output a graph to show how the fitting has gone, the ODE fit data will be output at the same time.
+# parameters are free to change to however you like
+def plot_data_fit(colourposition):
+    time_3min = np.linspace(0, 10800, 100)
+    plot_solution = solve_TMSD_ODEs_system(positive_control_concentration_nM = positive_control_concentration_nM, #five fluorescent linkers
+                                           time_t = np.linspace(0, 10800, 100), 
+                                           k_eff = fit_params[0], 
+                                           alpha = fit_params[1])
+    df_solution = pd.DataFrame({'x-axis': time_3min, 'y-axis': plot_solution})
+    sns.set(style = 'ticks',
+        rc = {'axes.facecolor': 'white'},
+        palette = Vivid_10.hex_colors # this is the colour palette
+        )
+        
+    fig, ax = plt.subplots(figsize=(10, 7))
+    
+    ax = sns.scatterplot(x = df_fitting['Time (s)'],
+                         y = df_fitting['Normalise to Maximum'],
+                         color = Vivid_10.hex_colors[colourposition],
+                         s = 100,
+                         zorder = 1,
+                         marker = 'o',
+                         alpha = 0.2,
+                         linewidth = 0,
+                         label = 'Data'
+                         )
+    
+    ax = sns.lineplot(x = time_3min,
+                      y = plot_solution,
+                      linestyle = '--',
+                      color = Vivid_10.hex_colors[9],
+                      alpha = 1.0,
+                      zorder = 10,
+                      linewidth = 2,
+                      label = 'Fit'
+                      )
+
+    plt.ylim(0, 1.0)
+    plt.xlim(0, 10800)
+
+    plt.gca().spines['left'].set_position(('outward', 5))  # Adjust the left spine position
+    plt.gca().spines['bottom'].set_position(('outward', 5))  # Adjust the bottom spine position
+ 
+    ax.spines['top'].set_visible(False) #despine
+    ax.spines['right'].set_visible(False) #despine
+
+    #tick location
+    ax.xaxis.set_major_locator(plt.MaxNLocator(2))
+    ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.yaxis.set_major_locator(plt.MaxNLocator(2))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    
+    ax.set_xlabel('Time (s)', fontsize = 16)
+    ax.tick_params(axis='x', labelsize=14)
+    ax.set_ylabel('Normalised Fluorescent (Au)', fontsize = 16)
+    ax.tick_params(axis='y', labelsize=14)
+    
+    #ax.get_legend().remove()
+    ax.legend(loc = 'lower right', fontsize = 14, frameon = True)
+    
+    plt.tight_layout()
+    return df_solution
+df_solution = plot_data_fit(colourposition = cmap_colour)
+excel_export(dataframe = df_solution, Name = File_name + 'figure' + keys_to_select[dictionary_keys_position], Path = folder_path)
+figure_export_png(Name = File_name + 'figure' + keys_to_select[dictionary_keys_position])
+figure_export_svg(Name = File_name + 'figure' + keys_to_select[dictionary_keys_position])
+
+
+
+
+
