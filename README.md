@@ -9,5 +9,6 @@ The following packages are needed for the code to run:
   - seaborn
   - scipy
   - tkinter
+
 The following packages are optional:
   - palettable
