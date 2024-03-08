@@ -30,6 +30,17 @@ The excel should have the following format, for each sheet:
 Column D can be computed through code instead
 
 Different samples should be in different sheet, this is so that the dictionary can be compiled. The code will output a graph and an excel of the ODE fit.
+## Example fit
+The script was used unmodified with the example data to perform the fitting.
+
+
+Excel Sheet position 1
+![Example datafiguredf_1_TMSD_1](https://github.com/chalmers4c/biochem_kinetic_fitting/assets/97460687/b5b88e32-a30a-41f8-9398-e50c81f76ea4)
+
+
+Excel Sheet position 2
+![Example datafiguredf_2_TMSD_2](https://github.com/chalmers4c/biochem_kinetic_fitting/assets/97460687/de5876c3-c73a-43ec-ac16-7f77331e978b)
+
 
 ## Acknowledgement
 The code was largely based on previously published code by sulcgroup [https://github.com/sulcgroup/TMSD_fitting]
