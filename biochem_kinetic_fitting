@@ -156,20 +156,7 @@ def solve_TMSD_ODEs_system(time_t, #array of time in seconds
     df_Integration_solution = pd.DataFrame(Integration_solution, columns = df_column_names)
     return normalise_Signal_Integration_solution
 
-# Below to run the function and plot, this is meant to help you understand how this works
-time_t = np.linspace(0, 10800, 100) # Create equal spaced array of time from 0 to 10800
-solution = solve_TMSD_ODEs_system(positive_control_concentration_nM = positive_control_concentration_nM, #five fluorescent linkers
-                                  time_t = np.linspace(0, 10800, 100), 
-                                  k_eff = 6.22, # mock value
-                                  alpha = 0.1) # mock value
 
-plt.figure(figsize=(7, 7))
-plt.plot(time_t, solution)
-plt.plot(time_t, solution[:, 1])
-plt.title('Normalised Signal Integration solution')
-plt.xlabel('Time')
-plt.ylabel('Normalized Fluorescence')
-plt.show()
 #%% fit curve.
 def fit_TMSD(normalised_time_t, 
              normalised_fluorescent_F, 
