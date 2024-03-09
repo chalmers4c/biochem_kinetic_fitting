@@ -257,8 +257,3 @@ df_solution = plot_data_fit(colourposition = cmap_colour)
 excel_export(dataframe = df_solution, Name = File_name + 'figure' + keys_to_select[dictionary_keys_position], Path = folder_path)
 figure_export_png(Name = File_name + 'figure' + keys_to_select[dictionary_keys_position])
 figure_export_svg(Name = File_name + 'figure' + keys_to_select[dictionary_keys_position])
-
-
-
-
-
